@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Aviator Analyzer</title>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+<style>
+*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family:Arial,sans-serif;
+  background:#07101f;
+  color:white;
+}
+header{
+  text-align:center;
+  padding:25px 15px;
+  background:#101b31;
+}
+header h1{color:#00e5ff;margin:0}
+header p{color:#9ba8bd}
+.container{max-width:650px;margin:auto;padding:18px}
+.card{
+  background:#111d33;
+  border:1px solid #293957;
+  border-radius:18px;
+  padding:20px;
+  margin-bottom:18px;
+}
+.upload{
+  display:block;
+  text-align:center;
+  padding:30px 15px;
+  border:2px dashed #3b5075;
+  border-radius:15px;
+  cursor:pointer;
+}
+.upload input{display:none}
+.icon{font-size:45px}
+#preview{
+  display:none;
+  width:100%;
+  max-height:400px;
+  object-fit:contain;
+  margin-top:15px;
+  border-radius:12px;
+}
+button{
+  width:100%;
+  padding:15px;
+  margin-top:15px;
+  border:0;
+  border-radius:12px;
+  background:#00c853;
+  color:white;
+  font-size:16px;
+  font-weight:bold;
+}
+button:disabled{background:#46516a}
+.status{text-align:center;color:#00e5ff;margin-top:15px}
+#results{display:none}
+.prediction{
+  text-align:center;
+  font-size:38px;
+  font-weight:bold;
+  color:#00ff88;
+  margin:20px 0;
+}
+.grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+}
+.stat{
+  background:#091326;
+  padding:15px;
+  border-radius:12px;
+  text-align:center;
+}
+.stat span{
+  display:block;
+  color:#8f9bb0;
+  font-size:13px;
+  margin-bottom:7px;
+}
+.stat strong{font-size:20px}
+.history{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+}
+.multiplier{
+  background:#243452;
+  padding:8px 12px;
+  border-radius:20px;
+}
+.note{
+  color:#ffc107;
+  font-size:13px;
+  line-height:1.5;
+  margin-top:18px;
+}
+textarea{
+  width:100%;
+  height:100px;
+  padding:12px;
+  background:#091326;
+  color:white;
+  border:1px solid #33476b;
+  border-radius:12px;
+  font-size:16px;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+<h1>✈️ Aviator Analyzer</h1>
+<p>Screenshot → OCR → Statistical Analysis</p>
+</header>
+
+<div class="container">
+
+<div class="card">
+
+<h2>📸 Upload Screenshot</h2>
+
+<label class="upload">
+<div class="icon">📷</div>
+<p>Tap करके Aviator screenshot चुनें</p>
+<small>JPG / PNG</small>
+
+<input
+  type="file"
+  id="imageInput"
+  accept="image/*">
+</label>
+
+<img id="preview">
+
+<button id="analyzeBtn"
+        onclick="analyzeScreenshot()"
+        disabled>
+🔍 ANALYZE SCREENSHOT
+</button>
+
+<div class="status" id="status"></div>
+
+</div>
+
+
+<div class="card" id="results">
+
+<h2>📊 Analysis Result</h2>
+
+<div class="prediction" id="prediction">--</div>
+
+<div class="grid">
+
+<div class="stat">
+<span>Average</span>
+<strong id="average">--</strong>
+</div>
+
+<div class="stat">
+<span>Lowest</span>
+<strong id="lowest">--</strong>
+</div>
+
+<div class="stat">
+<span>Highest</span>
+<strong id="highest">--</strong>
+</div>
+
+<div class="stat">
+<span>Results</span>
+<strong id="count">--</strong>
+</div>
+
+</div>
+
+<h3>Recent Multipliers</h3>
+<div class="history" id="history"></div>
+
+<div class="note">
+⚠️ यह past data पर आधारित statistical estimate है।
+Casino के अगले round का hidden result निश्चित रूप से
+पहले से जानना संभव नहीं है।
+</div>
+
+</div>
+
+
+<div class="card">
+
+<h2>⌨️ Manual History</h2>
+
+<p style="color:#9ba8bd">
+अगर OCR numbers सही नहीं पढ़ता, तो पुराने multipliers
+यहाँ डालें।
+</p>
+
+<textarea id="manual"
+placeholder="1.15, 1.03, 1.28, 1.34, 3.48, 7.95"></textarea>
+
+<button onclick="analyzeManual()">
+📊 ANALYZE HISTORY
+</button>
+
+</div>
+
+</div>
+
+
+<script>
+
+let selectedImage=null;
+
+document.getElementById("imageInput")
+.addEventListener("change",function(e){
+
+  const file=e.target.files[0];
+
+  if(!file)return;
+
+  selectedImage=file;
+
+  const preview=document.getElementById("preview");
+
+  preview.src=URL.createObjectURL(file);
+  preview.style.display="block";
+
+  document.getElementById("analyzeBtn")
+  .disabled=false;
+
+  document.getElementById("status")
+  .innerText="Screenshot ready.";
+
+});
+
+
+async function analyzeScreenshot(){
+
+  if(!selectedImage)return;
+
+  const button=document.getElementById("analyzeBtn");
+  const status=document.getElementById("status");
+
+  button.disabled=true;
+  status.innerText="🔎 Screenshot पढ़ा जा रहा है...";
+
+  try{
+
+    const result=await Tesseract.recognize(
+      selectedImage,
+      "eng",
+      {
+        logger:function(info){
+
+          if(info.status==="recognizing text"){
+
+            status.innerText=
+              "OCR: "+
+              Math.round(info.progress*100)+
+              "%";
+
+          }
+
+        }
+      }
+    );
+
+    const text=result.data.text;
+
+    const numbers=extractNumbers(text);
+
+    if(numbers.length<3){
+
+      status.innerText=
+      "⚠️ कम से कम 3 multipliers नहीं मिले। Manual History इस्तेमाल करें।";
+
+      button.disabled=false;
+      return;
+    }
+
+    showAnalysis(numbers);
+
+    status.innerText="✅ Analysis complete.";
+
+  }catch(error){
+
+    console.error(error);
+
+    status.innerText=
+    "❌ Screenshot पढ़ने में समस्या हुई।";
+
+  }
+
+  button.disabled=false;
+}
+
+
+function extractNumbers(text){
+
+  const matches=text.match(
+    /\b\d+(?:\.\d+)?\s*x?\b/gi
+  );
+
+  if(!matches)return[];
+
+  return matches
+  .map(x=>parseFloat(x.replace(/x/gi,"")))
+  .filter(x=>x>=1 && x<=1000);
+
+}
+
+
+function analyzeManual(){
+
+  const text=document.getElementById("manual").value;
+
+  const numbers=text
+  .replace(/x/gi,"")
+  .split(/[\s,]+/)
+  .map(Number)
+  .filter(x=>!isNaN(x)&&x>=1&&x<=1000);
+
+  if(numbers.length<3){
+
+    alert("कम से कम 3 multipliers डालें।");
+    return;
+
+  }
+
+  showAnalysis(numbers);
+
+}
+
+
+function showAnalysis(numbers){
+
+  const average=
+    numbers.reduce((a,b)=>a+b,0)/numbers.length;
+
+  const lowest=Math.min(...numbers);
+  const highest=Math.max(...numbers);
+
+  const recent=numbers.slice(-8);
+
+  const recentAverage=
+    recent.reduce((a,b)=>a+b,0)/recent.length;
+
+  /*
+    यह केवल statistical estimate है।
+    यह अगले hidden casino result को नहीं जानता।
+  */
+
+  let low=Math.max(
+    1.01,
+    recentAverage*0.75
+  );
+
+  let high=Math.max(
+    low+0.10,
+    recentAverage*1.25
+  );
+
+  high=Math.min(high,20);
+
+  low=Math.min(
+    low,
+    high-0.05
+  );
+
+  document.getElementById("prediction")
+  .innerText=
+    low.toFixed(2)+"x – "+high.toFixed(2)+"x";
+
+  document.getElementById("average")
+  .innerText=average.toFixed(2)+"x";
+
+  document.getElementById("lowest")
+  .innerText=lowest.toFixed(2)+"x";
+
+  document.getElementById("highest")
+  .innerText=highest.toFixed(2)+"x";
+
+  document.getElementById("count")
+  .innerText=numbers.length;
+
+  const history=document.getElementById("history");
+
+  history.innerHTML="";
+
+  numbers.slice(-20).reverse().forEach(n=>{
+
+    const item=document.createElement("div");
+
+    item.className="multiplier";
+    item.innerText=n.toFixed(2)+"x";
+
+    history.appendChild(item);
+
+  });
+
+  document.getElementById("results")
+  .style.display="block";
+
+  document.getElementById("results")
+  .scrollIntoView({
+    behavior:"smooth"
+  });
+
+}
+
+</script>
+
+</body>
+</html>
